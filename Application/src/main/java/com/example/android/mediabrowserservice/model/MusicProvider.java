@@ -17,8 +17,9 @@
 package com.example.android.mediabrowserservice.model;
 
 import android.media.MediaMetadata;
-import android.os.AsyncTask;
+import android.util.Log;
 
+import com.example.android.mediabrowserservice.model.model.Track;
 import com.example.android.mediabrowserservice.utils.LogHelper;
 
 import org.json.JSONArray;
@@ -38,6 +39,15 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+
+import retrofit.GsonConverterFactory;
+import retrofit.Retrofit;
+import retrofit.RxJavaCallAdapterFactory;
+import rx.Observable;
+import rx.Subscriber;
+import rx.android.schedulers.AndroidSchedulers;
+import rx.functions.Func1;
+import rx.schedulers.Schedulers;
 
 /**
  * Utility class to get a list of MusicTrack's based on a server-side JSON
@@ -176,22 +186,104 @@ public class MusicProvider {
             return;
         }
 
-                // Asynchronously load the music catalog in a separate thread
-        new AsyncTask<Void, Void, State>() {
-            @Override
-            protected State doInBackground(Void... params) {
-                retrieveMedia();
-                return mCurrentState;
-            }
+//                // Asynchronously load the music catalog in a separate thread
+//        new AsyncTask<Void, Void, State>() {
+//            @Override
+//            protected State doInBackground(Void... params) {
+//                retrieveMedia();
+//                return mCurrentState;
+//            }
+//
+//            @Override
+//            protected void onPostExecute(State current) {
+//                if (callback != null) {
+//                    callback.onMusicCatalogReady(current == State.INITIALIZED);
+//                }
+//            }
+//        }.execute();
 
-            @Override
-            protected void onPostExecute(State current) {
-                if (callback != null) {
-                    callback.onMusicCatalogReady(current == State.INITIALIZED);
+        if (mCurrentState == State.NON_INITIALIZED) {
+            mCurrentState = State.INITIALIZING;
+            getMusicList("acoustic").subscribe(new Subscriber<List<MediaMetadata>>() {
+                @Override
+                public void onCompleted() {
+                    Log.d(TAG, "onCompleted: ");
+                    buildListsByGenre();
+                    mCurrentState = State.INITIALIZED;
+                    if (callback != null) {
+                        callback.onMusicCatalogReady(true);
+                    }
                 }
-            }
-        }.execute();
+
+                @Override
+                public void onError(Throwable e) {
+                    Log.e(TAG, "onError: ", e.fillInStackTrace());
+                    if (mCurrentState != State.INITIALIZED) {
+                        // Something bad happened, so we reset state to NON_INITIALIZED to allow
+                        // retries (eg if the network connection is temporary unavailable)
+                        mCurrentState = State.NON_INITIALIZED;
+                        callback.onMusicCatalogReady(false);
+                    }
+                }
+
+                @Override
+                public void onNext(List<MediaMetadata> mediaMetadatas) {
+                    Log.d(TAG, "onNext: ");
+
+                }
+
+            });
+        }
     }
+
+    public static Observable<List<MediaMetadata>> getMusicList(String genreName) {
+        ApiService apiService=provideApiService(provideRestAdapter());
+        return apiService.getGenreList(genreName)
+                .subscribeOn(Schedulers.newThread())
+                .observeOn(AndroidSchedulers.mainThread())
+                .concatMap(new Func1<List<Track>, Observable<Track>>() {
+                    @Override
+                    public Observable<Track> call(List<Track> tracks) {
+                        return Observable.from(tracks);
+                    }
+                })
+                .concatMap(new Func1<Track, Observable<MediaMetadata>>() {
+                    @Override
+                    public Observable<MediaMetadata> call(Track track) {
+                        MediaMetadata metadata=getTrackMediaMetadata(track);
+                        String musicId = metadata.getString(MediaMetadata.METADATA_KEY_MEDIA_ID);
+                        mMusicListById.put(musicId, new MutableMediaMetadata(musicId, metadata));
+                        return Observable.just(metadata);
+                    }
+                })
+                .toList();
+    }
+    static Retrofit provideRestAdapter() {
+        return  new Retrofit.Builder()
+                .baseUrl("http://api-v2.hearthis.at/")
+                .addConverterFactory(GsonConverterFactory.create())
+                .addCallAdapterFactory(RxJavaCallAdapterFactory.create())
+                .build();
+    }
+
+    static ApiService provideApiService(Retrofit restAdapter) {
+        return restAdapter.create(ApiService.class);
+    }
+
+    private static MediaMetadata getTrackMediaMetadata(Track track) {
+        return
+                new MediaMetadata.Builder()
+                        .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, track.getId())
+                        .putString(CUSTOM_METADATA_TRACK_SOURCE, track.getStream_url())
+                        .putLong(MediaMetadata.METADATA_KEY_DURATION, Long.parseLong(track.getDuration()) * 1000)
+                        .putString(MediaMetadata.METADATA_KEY_GENRE, track.getGenre())
+                        .putString(MediaMetadata.METADATA_KEY_ALBUM_ART_URI, track.getArtwork_url())
+                        .putString(MediaMetadata.METADATA_KEY_DISPLAY_ICON_URI, track.getArtwork_url())
+                        .putString(MediaMetadata.METADATA_KEY_TITLE, track.getTitle())
+                        .build();
+    }
+
+
 
     private static synchronized void buildListsByGenre() {
         ConcurrentMap<String, List<MediaMetadata>> newMusicListByGenre = new ConcurrentHashMap<>();
