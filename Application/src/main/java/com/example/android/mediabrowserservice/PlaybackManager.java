@@ -42,10 +42,10 @@ import static android.media.session.MediaSession.QueueItem;
 /**
  * A class that implements local media playback using {@link android.media.MediaPlayer}
  */
-public class Playback implements AudioManager.OnAudioFocusChangeListener,
+public class PlaybackManager implements AudioManager.OnAudioFocusChangeListener,
         OnCompletionListener, OnErrorListener, OnPreparedListener, OnSeekCompleteListener {
 
-    private static final String TAG = LogHelper.makeLogTag(Playback.class);
+    private static final String TAG = LogHelper.makeLogTag(PlaybackManager.class);
 
     // The volume we set the media player to when we lose audio focus, but are
     // allowed to reduce the volume instead of stopping playback.
@@ -93,7 +93,7 @@ public class Playback implements AudioManager.OnAudioFocusChangeListener,
         }
     };
 
-    public Playback(MusicService service) {
+    public PlaybackManager(MusicService service) {
         this.mService = service;
         this.mAudioManager = (AudioManager) service.getSystemService(Context.AUDIO_SERVICE);
         // Create the Wifi lock (this does not acquire the lock, this just creates it)
@@ -472,7 +472,7 @@ public class Playback implements AudioManager.OnAudioFocusChangeListener,
          */
         void onCompletion();
         /**
-         * on Playback status changed
+         * on PlaybackManager status changed
          * Implementations can use this callback to update
          * playback state on the media sessions.
          */

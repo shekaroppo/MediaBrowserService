@@ -90,7 +90,7 @@ package com.example.android.mediabrowserservice;
   *
   */
 
- public class MusicService extends MediaBrowserService implements Playback.Callback {
+ public class MusicService extends MediaBrowserService implements PlaybackManager.Callback {
 
      // The action of the incoming Intent indicating that it contains a command
      // to be executed (see {@link #onStartCommand})
@@ -119,7 +119,7 @@ package com.example.android.mediabrowserservice;
      // Indicates whether the service was started.
      private boolean mServiceStarted;
      private DelayedStopHandler mDelayedStopHandler = new DelayedStopHandler(this);
-     private Playback mPlayback;
+     private PlaybackManager mPlaybackManager;
      private PackageValidator mPackageValidator;
 
      /*
@@ -142,10 +142,10 @@ package com.example.android.mediabrowserservice;
          mSession.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS |
              MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS);
 
-         mPlayback = new Playback(this);
-         mPlayback.setState(PlaybackState.STATE_NONE);
-         mPlayback.setCallback(this);
-         mPlayback.start();
+         mPlaybackManager = new PlaybackManager(this);
+         mPlaybackManager.setState(PlaybackState.STATE_NONE);
+         mPlaybackManager.setCallback(this);
+         mPlaybackManager.start();
 
          Context context = getApplicationContext();
          Intent intent = new Intent(context, MusicPlayerActivity.class);
@@ -173,7 +173,7 @@ package com.example.android.mediabrowserservice;
              String command = startIntent.getStringExtra(CMD_NAME);
              if (ACTION_CMD.equals(action)) {
                  if (CMD_PAUSE.equals(command)) {
-                     if (mPlayback != null && mPlayback.isPlaying()) {
+                     if (mPlaybackManager != null && mPlaybackManager.isPlaying()) {
                          handlePauseRequest();
                      }
                  }
@@ -337,7 +337,7 @@ package com.example.android.mediabrowserservice;
          @Override
          public void onSeekTo(long position) {
              LogHelper.d(TAG, "onSeekTo:", position);
-             mPlayback.seekTo((int) position);
+             mPlaybackManager.seekTo((int) position);
          }
 
          @Override
@@ -371,13 +371,13 @@ package com.example.android.mediabrowserservice;
 
          @Override
          public void onPause() {
-             LogHelper.d(TAG, "pause. current state=" + mPlayback.getState());
+             LogHelper.d(TAG, "pause. current state=" + mPlaybackManager.getState());
              handlePauseRequest();
          }
 
          @Override
          public void onStop() {
-             LogHelper.d(TAG, "stop. current state=" + mPlayback.getState());
+             LogHelper.d(TAG, "stop. current state=" + mPlaybackManager.getState());
              handleStopRequest(null);
          }
 
@@ -468,7 +468,7 @@ package com.example.android.mediabrowserservice;
       * Handle a request to play music
       */
      private void handlePlayRequest() {
-         LogHelper.d(TAG, "handlePlayRequest: mState=" + mPlayback.getState());
+         LogHelper.d(TAG, "handlePlayRequest: mState=" + mPlaybackManager.getState());
 
          mDelayedStopHandler.removeCallbacksAndMessages(null);
          if (!mServiceStarted) {
@@ -486,7 +486,7 @@ package com.example.android.mediabrowserservice;
 
          if (QueueHelper.isIndexPlayable(mCurrentIndexOnQueue, mPlayingQueue)) {
              updateMetadata();
-             mPlayback.play(mPlayingQueue.get(mCurrentIndexOnQueue));
+             mPlaybackManager.play(mPlayingQueue.get(mCurrentIndexOnQueue));
          }
      }
 
@@ -494,8 +494,8 @@ package com.example.android.mediabrowserservice;
       * Handle a request to pause music
       */
      private void handlePauseRequest() {
-         LogHelper.d(TAG, "handlePauseRequest: mState=" + mPlayback.getState());
-         mPlayback.pause();
+         LogHelper.d(TAG, "handlePauseRequest: mState=" + mPlaybackManager.getState());
+         mPlaybackManager.pause();
          // reset the delayed stop handler.
          mDelayedStopHandler.removeCallbacksAndMessages(null);
          mDelayedStopHandler.sendEmptyMessageDelayed(0, STOP_DELAY);
@@ -505,8 +505,8 @@ package com.example.android.mediabrowserservice;
       * Handle a request to stop music
       */
      private void handleStopRequest(String withError) {
-         LogHelper.d(TAG, "handleStopRequest: mState=" + mPlayback.getState() + " error=", withError);
-         mPlayback.stop(true);
+         LogHelper.d(TAG, "handleStopRequest: mState=" + mPlaybackManager.getState() + " error=", withError);
+         mPlaybackManager.stop(true);
          // reset the delayed stop handler.
          mDelayedStopHandler.removeCallbacksAndMessages(null);
          mDelayedStopHandler.sendEmptyMessageDelayed(0, STOP_DELAY);
@@ -587,17 +587,17 @@ package com.example.android.mediabrowserservice;
       * @param error if not null, error message to present to the user.
       */
      private void updatePlaybackState(String error) {
-         LogHelper.d(TAG, "updatePlaybackState, playback state=" + mPlayback.getState());
+         LogHelper.d(TAG, "updatePlaybackState, playback state=" + mPlaybackManager.getState());
          long position = PlaybackState.PLAYBACK_POSITION_UNKNOWN;
-         if (mPlayback != null && mPlayback.isConnected()) {
-             position = mPlayback.getCurrentStreamPosition();
+         if (mPlaybackManager != null && mPlaybackManager.isConnected()) {
+             position = mPlaybackManager.getCurrentStreamPosition();
          }
 
          PlaybackState.Builder stateBuilder = new PlaybackState.Builder()
                  .setActions(getAvailableActions());
 
          setCustomAction(stateBuilder);
-         int state = mPlayback.getState();
+         int state = mPlaybackManager.getState();
 
          // If there is an error message, send it to the playback state:
          if (error != null) {
@@ -643,7 +643,7 @@ package com.example.android.mediabrowserservice;
          if (mPlayingQueue == null || mPlayingQueue.isEmpty()) {
              return actions;
          }
-         if (mPlayback.isPlaying()) {
+         if (mPlaybackManager.isPlaying()) {
              actions |= PlaybackState.ACTION_PAUSE;
          }
          if (mCurrentIndexOnQueue > 0) {
@@ -669,7 +669,7 @@ package com.example.android.mediabrowserservice;
      }
 
      /**
-      * Implementation of the Playback.Callback interface
+      * Implementation of the PlaybackManager.Callback interface
       */
      @Override
      public void onCompletion() {
@@ -711,8 +711,8 @@ package com.example.android.mediabrowserservice;
          @Override
          public void handleMessage(Message msg) {
              MusicService service = mWeakReference.get();
-             if (service != null && service.mPlayback != null) {
-                 if (service.mPlayback.isPlaying()) {
+             if (service != null && service.mPlaybackManager != null) {
+                 if (service.mPlaybackManager.isPlaying()) {
                      LogHelper.d(TAG, "Ignoring delayed stop since the media player is in use.");
                      return;
                  }
