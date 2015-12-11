@@ -115,6 +115,7 @@ public class BrowseFragment extends Fragment {
         args.putString(ARG_MEDIA_ID, mediaId);
         BrowseFragment fragment = new BrowseFragment();
         fragment.setArguments(args);
+        Log.d(TAG, "newInstance======: "+mediaId);
         return fragment;
     }
 
